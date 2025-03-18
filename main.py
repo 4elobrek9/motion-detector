@@ -13,7 +13,25 @@ logging.basicConfig(filename='system_monitor.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s', encoding='utf-8')
 
 exit_program = False
-trigger_pixel_count = 25000
+# Значения чувствительности
+sensitivity_map = {
+    1: 1000,
+    2: 15000,
+    3: 40000
+}
+
+# Ввод чувствительности от пользователя
+while True:
+    try:
+        sensitivity_choice = int(input("Выберите чувствительность (1, 2 или 3): "))
+        if sensitivity_choice in sensitivity_map:
+            break
+        else:
+            print("Пожалуйста, выберите 1, 2 или 3.")
+    except ValueError:
+        print("Введите целое число.")
+
+trigger_pixel_count = sensitivity_map[sensitivity_choice]  # Получаем значение чувствительности
 last_trigger_time = time.time()  
 consecutive_triggers = 0  # Счетчик последовательных срабатываний
 grouped_triggers = 0  # Счетчик групп из 4 срабатываний
@@ -44,31 +62,29 @@ def main():
 
     while not exit_program:
         try:
-            current_window = gw.getActiveWindow()
+            # Проверяем наличие окна Iriun
+            windows = gw.getWindowsWithTitle("Iriun")
+            if windows:
+                current_window = windows[0]  # Используем первое найденное окно
+                bbox = (current_window.left, current_window.top, current_window.right, current_window.bottom)
 
-            if current_window is not None:
-                if current_window.title != last_window:
-                    last_window = current_window.title
-                    logging.info(f"Активное окно: {last_window}")
+                # Захватываем содержимое окна Iriun
+                current_image = ImageGrab.grab(bbox)
+                current_image_np = np.array(current_image)
+                current_image_gray = cv2.cvtColor(current_image_np, cv2.COLOR_BGR2GRAY)
 
-                if "Iriun" in last_window:
-                    bbox = (current_window.left, current_window.top, current_window.right, current_window.bottom)
-                    current_image = ImageGrab.grab(bbox)
-                    current_image_np = np.array(current_image)
-                    current_image_gray = cv2.cvtColor(current_image_np, cv2.COLOR_BGR2GRAY)
+                if last_image is None:
+                    last_image = current_image_gray
+                    logging.info("Сохранено начальное изображение.")
+                else:
+                    difference = cv2.absdiff(last_image, current_image_gray)
+                    _, thresh = cv2.threshold(difference, 30, 255, cv2.THRESH_BINARY)
+                    non_zero_count = cv2.countNonZero(thresh)
 
-                    if last_image is None:
+                    if non_zero_count >= trigger_pixel_count:
+                        on_trigger(non_zero_count)  # Передаем количество изменённых пикселей
+                        last_trigger_time = time.time()
                         last_image = current_image_gray
-                        logging.info("Сохранено начальное изображение.")
-                    else:
-                        difference = cv2.absdiff(last_image, current_image_gray)
-                        _, thresh = cv2.threshold(difference, 30, 255, cv2.THRESH_BINARY)
-                        non_zero_count = cv2.countNonZero(thresh)
-
-                        if non_zero_count >= trigger_pixel_count:
-                            on_trigger(non_zero_count)  # Передаем количество изменённых пикселей
-                            last_trigger_time = time.time()
-                            last_image = current_image_gray
 
             if keyboard.is_pressed('e'):
                 logging.info("Выход из программы по нажатию клавиши 'E'.")
